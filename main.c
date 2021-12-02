@@ -18,7 +18,7 @@ void printSymbol(int index, unsigned char page, unsigned int col);
 __interrupt void ADC12_ISR(void) {
   switch (ADC12IV)
   {
-    case ADC12IV_ADC12IFG1:
+    case ADC12IV_ADC12IFG0:
       break;
     default: break;
   }
@@ -195,6 +195,7 @@ int main(void) {
     WDTCTL = WDTPW | WDTHOLD;	// Stop watchdog timer
     __bis_SR_register(GIE);
 
+// check port assignments for MSP430f5529
 //    P1SEL1 |= BIT3;                           // Configure P1.3 for ADC
 //    P1SEL0 |= BIT3;
 
@@ -328,5 +329,29 @@ int main(void) {
 		cmd_1[3] = (cmd_1[3] & (~0x01)) | (~BIT0 & (0x01));
 		writeCommand(cmd_1 + 3, 1);
 	}
+
+	//
+	// TODO: set reference voltage
+	ADC12MCTL0 = (ADC12MCTL0 & (~0x0ff)) | ((ADC12INCH_10 & (0x0f)) | (0 & (0x070) | (ADC12EOS & (0x80))));
+
+	// TODO: set divider
+	// Set sampling mode (12-15, 9, 7-5, 4-3, 2-1)
+	ADC12CTL1 =
+			(ADC12CTL1 & (~0x0f17e)) | ((ADC12CSTARTADD_0 & (0x0f000)) | (ADC12SHP & (0x0100)) |
+					(ADC12DIV_0 & (0x0e0)) | (ADC12SSEL_3 & (0x018)) | (ADC12CONSEQ_0 & (0x05)));
+	// Required for temperature sensor
+	ADC12CTL0 = (ADC12CTL0 & (~0x020)) | (ADC12REFON & (0x020));
+
+	// Resolution and divider
+	ADC12CTL2 = (ADC12CTL2 & (~0x01b0)) | ((ADC12PDIV & (0x0100)) | (ADC12RES_2 & (0x030)));
+	// Start sampling
+	ADC12CTL0 = (ADC12CTL0 & (~0x01)) | (ADC12SC & (0x01));
+
+	// Enable interrupts
+	ADC12IE = ADC12IE0;
+
+	// Enable ADC
+	ADC12CTL0 = (ADC12CTL0 & (~0x010)) | (ADC12ON & (0x010));
+
 	return 0;
 }
