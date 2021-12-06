@@ -1,5 +1,6 @@
 #include <msp430.h>
 #include "font.h"
+#include "CTS_Layer.h"
 
 #define TAxCCR_05Hz 0xffff /* timer upper bound count value */
 #define BUTTON_DELAY 0x0380
@@ -332,7 +333,7 @@ int main(void) {
 
 	//
 	// TODO: set reference voltage
-	ADC12MCTL0 = (ADC12MCTL0 & (~0x0ff)) | ((ADC12INCH_10 & (0x0f)) | (0 & (0x070) | (ADC12EOS & (0x80))));
+	ADC12MCTL0 = (ADC12MCTL0 & (~0x0ff)) | ((ADC12INCH_10 & (0x0f)) | (ADC12SREF_1 & (0x070)) | (0 & (0x070) | (ADC12EOS & (0x80))));
 
 	// TODO: set divider
 	// Set sampling mode (12-15, 9, 7-5, 4-3, 2-1)
@@ -353,5 +354,81 @@ int main(void) {
 	// Enable ADC
 	ADC12CTL0 = (ADC12CTL0 & (~0x010)) | (ADC12ON & (0x010));
 
+
+
+//    while (1)
+//    {
+//        P1OUT &= ~BIT1;
+//        P8OUT &= ~BIT1;
+//        keypressed = (struct Element *) TI_CAPT_Buttons(&keypad);
+//        Clear();
+//
+//        if (keypressed && keypressed == &PAD1){
+//            P1OUT |= BIT1;
+//
+//            if (!(ADC12CTL1 & ADC12BUSY)) // if there is no active operation
+//            {
+//                SetupTimer();
+//                ADC12CTL0 |= ADC12ENC;
+//            }
+//        }
+//        __delay_cycles(900000);
+//    }
 	return 0;
 }
+
+//	REFCTL0 &= ~REFMSTR;      // turn of REF block
+//	ADC12CTL0 = ADC12SHT0_8 + ADC12REFON + ADC12ON + ADC12SHP; //impulse mode
+//	ADC12CTL1 = ADC12CONSEQ_1 + ADC12SHS_1 + ADC12SSEL_0;  // enable sample timer
+//	ADC12MCTL0 = ADC12SREF_1 + ADC12INCH_10 + ADC12EOS;    // ADC i/p ch A10 = temp sense i/p
+//	ADC12IE = ADC12IE0;                         // ADC_IFG upon conv result-ADCMEMO
+//	ADC12CTL0 |= ADC12ENC;
+
+//const struct Element *TI_CAPT_Buttons(const struct Sensor *groupOfElements)
+//{
+//    uint8_t index;
+//    #ifndef RAM_FOR_FLASH
+//    uint16_t *measCnt;
+//    measCnt = (uint16_t *)malloc(groupOfElements->numElements * sizeof(uint16_t));
+//    if(measCnt ==0)
+//    {
+//        while(1);
+//    }
+//    #endif
+//    TI_CAPT_Custom(groupOfElements, measCnt);
+//
+//    if(ctsStatusReg & EVNT)
+//    {
+//        index = Dominant_Element(groupOfElements, measCnt);
+//        //ctsStatusReg &= ~EVNT;
+//        index++;
+//    }
+//    else
+//    {
+//        index = 0;
+//    }
+//    #ifndef RAM_FOR_FLASH
+//    free(measCnt);
+//    #endif
+//    if(index)
+//    {
+//      return groupOfElements->arrayPtr[index-1];
+//    }
+//    return 0;
+//}
+
+//while(1){
+//    P1OUT &= ~(LED4 + LED5 + LED6 + LED7 + LED8);
+//    keypressed = (struct Element *) TI_CAPT_Buttons(&keypad);
+//    _no_operation();
+//    if (keypressed == address_list[0])
+//    {
+//        P1OUT |= LED4;
+//        if (!(ADC12CTL1 & ADC12BUSY))
+//        {
+//            SetupTimer();
+//            ADC12CTL0 |= ADC12ENC;
+//        }
+//    }
+//    __delay_cycles(900000);
+//}
