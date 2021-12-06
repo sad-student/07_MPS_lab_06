@@ -1,6 +1,0 @@
-Option 1
-
-1 RC Термодатчик Импульс. Однократный Програм.
-
-https://sites.ualberta.ca/~delliott/ece492/appnotes/2015w/G2_MSP430_ADC12/MSP430_ADC12_Application_Notes_V2.0.pdf
-HAL_Wheel.h
