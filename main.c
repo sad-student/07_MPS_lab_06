@@ -36,44 +36,67 @@ void setUp(uint16_t level)
     PMMCTL0_H = 0x00;
 }
 
-void SetupTimer()
-{
-    // setup timer
-    TA0CTL = TASSEL__SMCLK | MC__UP | ID__1 | TACLR;     // SMCLK, UP-mode
-    long int time = 32768;
-    long int period = time / 2;
-    TA0CCR0 = time;
-    TA0CCR1 = period;
-    TA0CCTL1 = OUTMOD_3;
-}
+//void SetupTimer()
+//{
+//    // setup timer
+//    TA0CTL = TASSEL__SMCLK | MC__UP | ID__1 | TACLR;     // SMCLK, UP-mode
+//    long int time = 32768;
+//    long int period = time / 2;
+//    TA0CCR0 = time;
+//    TA0CCR1 = period;
+//    TA0CCTL1 = OUTMOD_3;
+//}
 
 void SetupADC()
 {
 
-    REFCTL0 &= ~REFMSTR;        // turn of REF block
+//    REFCTL0 &= ~REFMSTR;        // turn of REF block
+//
+//    ADC12CTL0 =
+//        ADC12SHT0_8
+//        + ADC12REFON
+//        + ADC12ON;
+//
+//    // Internal ref = 1.5V
+//
+//    ADC12CTL1 =
+//        ADC12SHP
+//        + ADC12SHS_1
+//        + ADC12SSEL_0
+//        + ADC12CONSEQ_2;  // enable sample timer
+//
+//    ADC12MCTL0 =
+//        ADC12SREF_1
+//        + ADC12INCH_10;    // ADC i/p ch A10 = temp sense i/pf
+//
+//    ADC12IE = ADC12IE0;                         // ADC_IFG upon conv result-ADCMEMO
+//
+//    __delay_cycles(100);                        // delay to allow Ref to settle
+//
+//    ADC12CTL0 |= ADC12ENC;
 
-    ADC12CTL0 =
-        ADC12SHT0_8
-        + ADC12REFON
-        + ADC12ON;
+    //
+	// TODO: set reference voltage
+	ADC12MCTL0 = (ADC12MCTL0 & (~0x0ff)) | ((ADC12INCH_10 & (0x0f)) | (ADC12SREF_1 & (0x070)) | (0 & (0x070) | (ADC12EOS & (0x80))));
 
-    // Internal ref = 1.5V
+	// TODO: set divider
+	// Set sampling mode (12-15, 9, 7-5, 4-3, 2-1)
+	ADC12CTL1 =
+			(ADC12CTL1 & (~0x0f17e)) | ((ADC12CSTARTADD_0 & (0x0f000)) | (ADC12SHP & (0x0100)) |
+					(ADC12DIV_0 & (0x0e0)) | (ADC12SSEL_3 & (0x018)) | (ADC12CONSEQ_0 & (0x05)));
+	// Required for temperature sensor
+	ADC12CTL0 = (ADC12CTL0 & (~0x020)) | (ADC12REFON & (0x020));
 
-    ADC12CTL1 =
-        ADC12SHP
-        + ADC12SHS_1
-        + ADC12SSEL_0
-        + ADC12CONSEQ_2;  // enable sample timer
+	// Resolution and divider
+	ADC12CTL2 = (ADC12CTL2 & (~0x01b0)) | ((ADC12PDIV & (0x0100)) | (ADC12RES_2 & (0x030)));
+	// Start sampling
+	ADC12CTL0 = (ADC12CTL0 & (~0x01)) | (ADC12SC & (0x01));
 
-    ADC12MCTL0 =
-        ADC12SREF_1
-        + ADC12INCH_10;    // ADC i/p ch A10 = temp sense i/pf
+	// Enable interrupts
+	ADC12IE = ADC12IE0;
 
-    ADC12IE = ADC12IE0;                         // ADC_IFG upon conv result-ADCMEMO
-
-    __delay_cycles(100);                        // delay to allow Ref to settle
-
-    ADC12CTL0 |= ADC12ENC;
+	// Enable ADC
+	ADC12CTL0 = (ADC12CTL0 & (~0x010)) | (ADC12ON & (0x010));
 }
 
 #define CALADC12_15V_30C *((unsigned int *)0x1A1A) // Temperature Sensor Calibration-30 C
@@ -98,7 +121,7 @@ __interrupt void ADC12_ISR() {
 
     printNumber(deg_c);
 
-    ADC12CTL0 &= ~ADC12ENC;
+//    ADC12CTL0 &= ~ADC12ENC;
 }
 
 #pragma vector = TIMER2_A1_VECTOR
@@ -113,6 +136,7 @@ __interrupt void TA2_handler(void){
 			break;
 	}
 }
+
 void writeCommand(unsigned char *sCmd, unsigned char i) {
     // Store current GIE state
     unsigned int gie = __get_SR_register() & GIE;
@@ -368,8 +392,8 @@ int main(void)
     TI_CAPT_Init_Baseline(&keypad);
     TI_CAPT_Update_Baseline(&keypad, 5);
     SetupADC();
-    SetupTimer();
-    ADC12CTL0 |= ADC12ENC;
+//    SetupTimer();
+//    ADC12CTL0 |= ADC12ENC;
     setUp(0x01);setUp(0x02);setUp(0x03);
     __bis_SR_register(GIE);
 
@@ -378,7 +402,6 @@ int main(void)
         P1OUT &= ~BIT1;
         P8OUT &= ~BIT1;
         keypressed = (struct Element *) TI_CAPT_Buttons(&keypad);
-        Clear();
 
         if (keypressed && keypressed == &PAD1)
         {
@@ -386,14 +409,15 @@ int main(void)
 
             if (!(ADC12CTL1 & ADC12BUSY)) // if there is no active operation
             {
-                SetupTimer();
-                ADC12CTL0 |= ADC12ENC;
+//                SetupTimer();
+//                ADC12CTL0 |= ADC12ENC;
+
+
+            	ADC12CTL0 = (ADC12CTL0 & (~0x01)) | (ADC12SC & (0x01));
             }
         }
         __delay_cycles(900000);
     }
-
-
     return 0;
 }
 
