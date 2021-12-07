@@ -1,0 +1,6 @@
+Option 11
+
+#define CALADC12_15V_30C *((unsigned int *)0x1A1A) // Temperature Sensor Calibration-30 C
+#define CALADC12_15V_85C *((unsigned int *)0x1A1C) // Temperature Sensor Calibration-85 C
+
+((result - CALADC12_15V_30C )* (85 - 30))/ (CALADC12_15V_85C - CALADC12_15V_30C)

@@ -1,101 +1,22 @@
 #include <msp430.h>
 #include "CTS_Layer.h"
 #include <math.h>
+#include "font.h"
 
-typedef unsigned char uchar;
+#define TAxCCR_05Hz 0xffff /* timer upper bound count value */
+#define BUTTON_DELAY 0x0380
+#define DISPLAY_RATE 5
 
+unsigned int display_available = 1;
 
-#define SCROL_CTL                   0x40  //Scroll image up by SL rows (SL = last 5 bits), range:0-63
-
-#define SET_MIRROR_COL              0xA0  //Normal mirror SEG (column) mapping (set bit0 to mirror columns)
-
-#define SET_MIRROR_ROW              0xC0  //Normal mirror COM (row) mapping (set bit3 to mirror rows)
-
-#define ALL_PIXEL_ON                0xA4  //Disable all pixel on (last bit 1 to turn on all pixels - does not affect memory)
-
-#define LCD_INVERSE                 0xA6  //Inverse display off (last bit 1 to invert display - does not affect memory)
-
-#define BIAS_RATIO_VCC              0xA2  //Set voltage bias ratio (BR = bit0)
-
-#define POW_CTL                     0x2F  //Set Power control - booster, regulator, and follower on
-
-#define SET_CONTRAST_RESISTOR       0x27  //Set internal resistor ratio Rb/Ra to adjust contrast
-#define MSB_SELECT_VOLUME            0x81  //Set Electronic Volume "PM" to adjust contrast
-#define LSB_SELECT_VOLUME            0x10  //Set Electronic Volume "PM" to adjust contrast (PM = last 5 bits)
-
-#define ADV_CTL_MSB                 0xFA  //Set temp. compensation curve to -0.11%/C
-#define ADV_CTL_LSB                 0x90
-
-#define COLUMN_ADR_MSB              0x10  //Set SRAM col. addr. before write, last 4 bits = ca4-ca7
-#define COLUMN_ADR_LSB              0x00  //Set SRAM col. addr. before write, last 4 bits = ca0-ca3
-#define PAGE_ADR                    0xB0  //Set SRAM page addr (pa = last 4 bits), range:0-8
-
-#define LCD_EN                      0xAF  //Enable display (exit sleep mode & restore power)
-
-#define ROWS 7
-#define COLUMNS 5
-#define PAGES 1
-#define DELAY 500
-#define COLUMN_OFFSET_BIG 30
-#define COLUMN_OFFSET_NONE 0
-
-#define M_PI 3.1415926535
-
-void SetupButtons();
-void SetupLCD();
+void writeCommand(unsigned char *sCmd, unsigned char i);
+void writeData(unsigned char *sData, unsigned char i);
+void setPosition(unsigned char page, unsigned char col);
+void printNumber(int num);
+void printSymbol(int index, unsigned char page, unsigned int col);
 void Delay(long int value);
-void Dogs102x6_writeCommand(uchar *sCmd, uchar i);
-void Clear(void);
-void __LCD_SetAddress(uchar page, uchar column);
-void Dogs102x6_writeData(uchar *sData, uchar i);
-void ShowNumber(int number);
-int DigitLength(int number);
-char CMA3000_RW_SPI(unsigned char mosi_byte1, unsigned char mosi_byte2);
 
-uchar inversions[2][1] = {{0xA6}, {0xA7}};
-int bit_level_mg_values[] = {4571, 2286, 1142, 571, 286, 143, 71};
-const double rad_degree = 180.0 / M_PI;
-unsigned char whatChecking = 0;
 struct Element* keypressed;
-
-// 4 columns (+2 offset) and 9 rows. Each byte => 8 rows == 1 page
-uchar plus[PAGES][COLUMNS]  = {0x1C, 0x7F, 0x7F, 0x1C, 0x00};
-uchar minus[PAGES][COLUMNS] = {0x1C, 0x1C, 0x1C, 0x1C, 0x00};
-uchar digits[10][PAGES][COLUMNS] = {
-  {0x7F, 0x41, 0x41, 0x7F, 0x00}, // digit 0
-  {0x09, 0x11, 0x7F, 0x01, 0x00}, // digit 1
-  {0x23, 0x45, 0x49, 0x31, 0x00}, // digit 2
-  {0x49, 0x49, 0x49, 0x7F, 0x00}, // digit 3
-  {0x78, 0x08, 0x08, 0x7F, 0x00}, // digit 4
-  {0x79, 0x49, 0x49, 0x4F, 0x00}, // digit 5
-  {0x7F, 0x49, 0x49, 0x4F, 0x00}, // digit 6
-  {0x40, 0x40, 0x40, 0x7F, 0x00}, // digit 7
-  {0x7F, 0x49, 0x49, 0x7F, 0x00}, // digit 8
-  {0x79, 0x49, 0x49, 0x7F, 0x00}  // digit 9
-};
-
-int number = 0;
-int column_offset = COLUMN_OFFSET_BIG; // 0 - default is COLUMN_OFFSET_BIG, 1 - mirror horizonta is COLUMN_OFFSET_NONE
-
-uchar LCD_INIT_COMMANDS_PART_1[7] = {
-    SCROL_CTL,
-    SET_MIRROR_COL,
-    SET_MIRROR_ROW,
-    ALL_PIXEL_ON,
-    LCD_INVERSE,
-    BIAS_RATIO_VCC,
-    POW_CTL
-};
-uchar LCD_INIT_COMMANDS_PART_2[6] = {
-    SET_CONTRAST_RESISTOR,
-    MSB_SELECT_VOLUME,
-    LSB_SELECT_VOLUME,
-    ADV_CTL_MSB,
-    ADV_CTL_LSB,
-    LCD_EN,
-};
-int AMOUNT_OF_COMMANDS_1 = 7;
-int AMOUNT_OF_COMMANDS_2 = 6;
 
 void setUp(uint16_t level)
 {
@@ -113,14 +34,6 @@ void setUp(uint16_t level)
         while ((PMMIFG & SVMLVLRIFG) == 0);
     SVSMLCTL = SVSLE + SVSLRVL0 * level + SVMLE + SVSMLRRL0 * level;
     PMMCTL0_H = 0x00;
-}
-
-
-long int myAbs(volatile long int number){
-    if(number < 0){
-        return -1 * number;
-    }
-    return number;
 }
 
 void SetupTimer()
@@ -166,7 +79,6 @@ void SetupADC()
 #define CALADC12_15V_30C *((unsigned int *)0x1A1A) // Temperature Sensor Calibration-30 C
 #define CALADC12_15V_85C *((unsigned int *)0x1A1C) // Temperature Sensor Calibration-85 C
 
-
 #pragma vector = ADC12_VECTOR
 __interrupt void ADC12_ISR() {
     TA0CTL &= ~MC__UP;
@@ -184,10 +96,130 @@ __interrupt void ADC12_ISR() {
     temp4 += 30;
     volatile long int deg_c = (long int)temp4;
 
-    Clear();
-    ShowNumber(deg_c);
+    printNumber(deg_c);
 
     ADC12CTL0 &= ~ADC12ENC;
+}
+
+#pragma vector = TIMER2_A1_VECTOR
+__interrupt void TA2_handler(void){
+	switch(TA2IV){
+		case TA2IV_TACCR2:
+			// Display
+			display_available = 1;
+			TA2CCTL2 = (TA2CCTL2 & (~0x010)) | (~CCIE & (0x010)); // & ~CCIE;
+			break;
+		default:
+			break;
+	}
+}
+void writeCommand(unsigned char *sCmd, unsigned char i) {
+    // Store current GIE state
+    unsigned int gie = __get_SR_register() & GIE;
+    // Make this operation atomic
+    __disable_interrupt();
+    // CS Low
+    P7OUT &= ~BIT4;
+    // CD Low
+    P5OUT &= ~BIT6;
+    while (i){
+        // USCI_B1 TX buffer ready?
+        while (!(UCB1IFG & UCTXIFG)) ;
+        // Transmit data
+        UCB1TXBUF = *sCmd++;
+        // Decrement the Byte counter
+        i--;
+    }
+
+    // Wait for all TX/RX to finish
+    while (UCB1STAT & UCBUSY) ;
+    // Dummy read to empty RX buffer and clear any overrun conditions
+    UCB1RXBUF;
+    // CS High
+    P7OUT |= BIT4;
+    // Restore original GIE state
+    __bis_SR_register(gie);
+}
+
+void writeData(unsigned char *sData, unsigned char i) {
+    // Store current GIE state
+    unsigned int gie = __get_SR_register() & GIE;
+    // Make this operation atomic
+    __disable_interrupt();
+	// CS Low
+	P7OUT &= ~BIT4;
+	//CD High
+	P5OUT |= BIT6;
+
+	while (i){
+	  // USCI_B1 TX buffer ready?
+	  while (!(UCB1IFG & UCTXIFG)) ;
+	  // Transmit data and increment pointer
+	  UCB1TXBUF = *sData++;
+	  // Decrement the Byte counter
+	  i--;
+	}
+
+	// Wait for all TX/RX to finish
+	while (UCB1STAT & UCBUSY) ;
+	// Dummy read to empty RX buffer and clear any overrun conditions
+	UCB1RXBUF;
+	// CS High
+	P7OUT |= BIT4;
+
+    // Restore original GIE state
+    __bis_SR_register(gie);
+}
+
+#define SET_COLUMN_ADDRESS_MSB		0x10
+#define SET_COLUMN_ADDRESS_LSB		0x00
+#define SET_PAGE_ADDRESS			0xB0
+void setPosition(unsigned char page, unsigned char col){
+	unsigned char cmd_6[3] = {SET_COLUMN_ADDRESS_MSB, SET_COLUMN_ADDRESS_LSB, SET_PAGE_ADDRESS};
+	cmd_6[0] = (cmd_6[0] & (~0x0f)) | ((col >> 4) & (0x0f));
+	cmd_6[1] = (cmd_6[1] & (~0x0f)) | (col & 0x0f);
+	cmd_6[2] = (cmd_6[2] & (~0x0f)) | (page & 0x0f);
+	writeCommand(cmd_6, 3);
+}
+
+void printNumber(int num){
+	if (display_available == 0) {
+		return;
+	}
+	display_available = 0;
+
+	unsigned char current_page = 0;
+	unsigned char current_col = 0;
+
+	if (num < 0) {
+		num = -num;
+		printSymbol(11, current_page, current_col);
+	} else {
+		printSymbol(10, current_page, current_col);
+	}
+	current_col += 8;
+
+	unsigned char indices[4] = {13, 12, 12, 12};
+	unsigned int current_pos = sizeof(indices);
+	do {
+		indices[--current_pos] = num % 10;
+		num /= 10;
+	} while (num > 0);
+
+	int i;
+	for (i = current_pos; i < current_pos + sizeof(indices); ++i){
+		printSymbol(indices[i % sizeof(indices)], current_page, current_col);
+		current_col += 8;
+	}
+	TA2CCR2 = TA2R + (TAxCCR_05Hz / DISPLAY_RATE);
+	TA2CCTL2 = (TA2CCTL2 & (~0x010)) | CCIE;
+}
+
+void printSymbol(int index, unsigned char page, unsigned int col){
+	setPosition(page+1, col);
+	writeData(_font[index], 6);
+	setPosition(page, col);
+	writeData(_font[index] + 6, 6);
 }
 
 int main(void)
@@ -195,8 +227,6 @@ int main(void)
     WDTCTL = WDTPW | WDTHOLD;
 
     uint8_t i;
-
-    SetupLCD();
 
     /* Initialize IO */
     P1DIR = 0xFF;
@@ -218,6 +248,121 @@ int main(void)
                                             // (762 + 1) * 32768 = 25MHz
                                             // Set FLL Div = fDCOCLK/2
     __bic_SR_register(SCG0);                  // Enable the FLL control loop
+
+    UCSCTL3 = (UCSCTL3 & (~0x070)) | SELREF__XT1CLK;
+	UCSCTL3 = (UCSCTL3 & (~0x07)) | FLLREFDIV__2;
+	UCSCTL2 = (UCSCTL2 & (~0x0cff)) | ((8 - 1) & (0x0cff)); // FLLN multiplier
+	UCSCTL2 = (UCSCTL2 & (~0x07000)) | FLLD__8; // FLLD divider
+	UCSCTL1 = (UCSCTL1 & (~0x070)) | DCORSEL_1;
+
+	UCSCTL4 = (UCSCTL4 & (~0x070)) | SELS__DCOCLKDIV;
+	UCSCTL5 = (UCSCTL5 & (~0x070)) | DIVS__1;
+
+	TA2CTL = (TA2CTL & (~0x0300)) | TASSEL__SMCLK;
+	TA2CTL = (TA2CTL & (~0x030)) | MC__CONTINOUS;
+	TA2CTL = (TA2CTL & (~0x0c0)) | ID__4;
+	TA2CTL |= TACLR;
+	TA2CCTL1 = (TA2CCTL1 & (~0x0100)) & ~CAP;
+	TA2CCTL2 = (TA2CCTL2 & (~0x0100)) & ~CAP;
+	TA2CCTL1 = (TA2CCTL1 & (~0x010)) & ~CCIE;
+	TA2CCTL2 = (TA2CCTL2 & (~0x010)) & ~CCIE;
+
+	// UART initialization
+	// Initialize USCI_B1 for SPI Master operation
+	UCB1IFG = (UCB1IFG & (~0x03)) | ((~UCTXIFG & (0x02)) | (~UCRXIFG & (0x01)));
+	UCB1IE = (UCB1IE & (~0x03)) | ((~UCTXIE & 0x02)| (~UCRXIE & 0x01));
+	// UCB1IE = (UCB1IE & (~0x03)) | UCTXIE | UCRXIE;
+	// Put state machine in reset
+	UCB1CTL1 |= UCSWRST;
+	//3-pin, 8-bit SPI master; Clock phase - data captured first edge, change second edge; MSB
+	UCB1CTL0 = UCCKPH + UCMSB + UCMST + UCMODE_0 + UCSYNC;
+	// Use SMCLK, keep RESET
+	UCB1CTL1 = UCSSEL_2 + UCSWRST;
+	UCB1BR1 = 0;
+	UCB1BR0 = 0x02;
+	// Release USCI state machine
+	UCB1CTL1 &= ~UCSWRST;
+
+
+    // LCD initialization
+	// Chip select and screen backlight
+	P7SEL &= ~(BIT4 | BIT6);
+	P7DIR |= (BIT4 | BIT6);
+
+	// Reset and Command/Data
+	P5SEL &= ~(BIT6 | BIT7);
+	P5DIR |= (BIT6 | BIT7);
+
+	// Option select SIMO and select CLK
+	P4SEL |= (BIT1 | BIT3);
+	P4DIR |= (BIT1 | BIT3);
+
+	// Port initialization for LCD operation
+	// CS is active low
+	P7OUT |= BIT4;
+	// Reset is active low
+	P5OUT &= BIT7;
+	// Reset is active low
+	P5OUT |= BIT7;
+	// Enable screen backlight
+	P7OUT |= BIT6;
+
+
+
+#define SET_SCROLL_LINE		0x40
+#define SET_MX				0xA0
+#define SET_MY				0xC0
+#define SET_ALL_PIXEL_ON	0xA4
+#define SET_INVERSE_DISPLAY		0xA6
+#define SET_PM_MSB			0x81
+#define SET_PM_LSB			0x00
+#define SET_POWER_CONTROL	0x28
+#define SET_PC				0x20
+#define SET_BIAS_RATIO		0xA2
+#define SET_ADV_CONTROL_MSB	0xFA
+#define SET_ADV_CONTROL_LSB	0x10
+#define SET_DISPLAY_ENABLE	0xAE
+#define SYSTEM_RESET		0xE2
+
+	{
+		unsigned char cmd_1[] = {
+			SET_SCROLL_LINE,		// 0
+			SET_MX,					// 1
+			SET_MY,					// 2
+			SET_ALL_PIXEL_ON,		// 3
+			SET_INVERSE_DISPLAY,	// 4
+			SET_PM_MSB,				// 5
+			SET_PM_LSB,				// 6
+			SET_POWER_CONTROL,		// 7
+			SET_PC,					// 8
+			SET_BIAS_RATIO,			// 9
+			SET_ADV_CONTROL_MSB,	// 10
+			SET_ADV_CONTROL_LSB,	// 11
+			SET_DISPLAY_ENABLE		// 12
+		};
+
+		cmd_1[1] = (cmd_1[1] & (~0x01)) | (BIT0 & 0x01);
+		cmd_1[2] = (cmd_1[2] & (~0x08)) | (BIT3 & 0x08);
+		cmd_1[3] = (cmd_1[3] & (~0x01)) | BIT0;
+		cmd_1[6] = (cmd_1[6] & (~0x03f)) | (0x030 & (0x03f));
+		cmd_1[7] = (cmd_1[7] & (~0x07)) | ((BIT0 | BIT1 | BIT2) & (0x07));
+		cmd_1[8] = (cmd_1[8] & (~0x07)) | (0x4 & (0x07));
+		cmd_1[11] = (cmd_1[11] & (~0x083)) | ((BIT7) & (0x83));
+		cmd_1[12] = (cmd_1[12] & (~0x01)) | BIT0;
+
+		writeCommand(cmd_1, sizeof(cmd_1));
+
+		int i, j = 0;
+		for (i = 0; i < 132; i+=sizeof(_font[12])){
+			for (j = 0; j < 8; ++j){
+				setPosition(j, i);
+				writeData(_font[12], sizeof(_font[12]));
+			}
+		}
+
+		cmd_1[3] = (cmd_1[3] & (~0x01)) | (~BIT0 & (0x01));
+		writeCommand(cmd_1 + 3, 1);
+	}
 
     /*  establish baseline */
     TI_CAPT_Init_Baseline(&keypad);
@@ -252,75 +397,6 @@ int main(void)
     return 0;
 }
 
-void init_A1(void)
-{
-    TA1CCR0 = 20000;//5242;//5242 for 0.005 s
-    TA1CTL |= TASSEL__SMCLK;
-    TA1CTL |= TACLR;
-
-    TA1CTL &= ~MC__UP;
-    //TA1CCTL0 |= CCIE;
-}
-
-
-void SetupLCD(void)
-{
-    // Reset LCD
-    P5DIR |= BIT7;  // port init for LCD operations
-    P5OUT &= ~BIT7; // set RST (active low)
-    P5OUT |= BIT7;  // reset RST (inactive is high)
-
-    // Delay for at least 5ms
-    Delay(550);
-
-    // Choosing slave
-    P7DIR |= BIT4;  // select LCD for chip
-    P7OUT &= ~BIT4; // CS is active low
-
-    // Setting up LCD_D/C
-    P5DIR |= BIT6;  // Command/Data for LCD
-    P5OUT &= ~BIT6; // CD low for command
-
-    // Set up P4.1 -- SIMO, P4.3 -- SCLK (select PM_UCB1CLK)
-    P4SEL |= BIT1 | BIT3;
-    P4DIR |= BIT1 | BIT3;
-
-    // Set up backlit
-    P7DIR |= BIT6;  // init
-    P7OUT |= BIT6;  // backlit
-    P7SEL &= ~BIT6; // USE PWM to controll brightness
-
-    // Deselect slave
-    P7OUT |= BIT4;  // CS = 1 (Deselect LCD) (stop setting it up)
-
-    UCB1CTL1 |= UCSWRST;    // set UCSWRST bit to disabel USCI and change its control registeres
-
-    UCB1CTL0 = (
-        UCCKPH  &   // UCCKPH - 1: change out on second signal change, capture input on first one)
-        ~UCCKPL |   // UCCKPL - 0: active level is 1
-        UCMSB   |   // MSB comes first, LSB is next
-        UCMST   |   // Master mode
-        UCSYNC  |   // Synchronious mode
-        UCMODE_0    // 3 pin SPI mode
-    );
-
-    // set SMCLK as source and keep RESET
-    UCB1CTL1 = UCSSEL_2 | UCSWRST;
-
-    // set frequency divider
-    UCB1BR0 = 0x01; // LSB to 1
-    UCB1BR1 = 0;    // MSB to 0
-
-    UCB1CTL1 &= ~UCSWRST;   // enable USCI
-    UCB1IFG &= ~UCRXIFG;    // reset int flag (which is set after input shift register gets data)
-    Dogs102x6_writeCommand(LCD_INIT_COMMANDS_PART_1, AMOUNT_OF_COMMANDS_1);
-
-    // delay to wait at least 120 ms
-    Delay(12500);
-
-    Dogs102x6_writeCommand(LCD_INIT_COMMANDS_PART_2, AMOUNT_OF_COMMANDS_2);
-}
-
 void Delay(long int value)
 {
     volatile long int i = 0;
@@ -329,190 +405,5 @@ void Delay(long int value)
     {
         temp++;
     }
-}
-
-void Dogs102x6_writeCommand(uchar *sCmd, uchar i)
-{
-    // CS Low
-    P7OUT &= ~BIT4;
-
-    // CD Low
-    P5OUT &= ~BIT6;
-    while (i)
-    {
-        // USCI_B1 TX buffer ready?
-        while (!(UCB1IFG & UCTXIFG)) ;
-
-        // Transmit data
-        UCB1TXBUF = *sCmd;
-
-        // Increment the pointer on the array
-        sCmd++;
-
-        // Decrement the Byte counter
-        i--;
-    }
-
-    // Wait for all TX/RX to finish
-    while (UCB1STAT & UCBUSY);
-
-    // Dummy read to empty RX buffer and Clear any overrun conditions
-    UCB1RXBUF;
-
-    // CS High
-    P7OUT |= BIT4;
-}
-
-void Clear(void)
-{
-    uchar lcd_data[] = {0x00};
-    uchar page, column;
-
-    for (page = 0; page < 8; page++)
-    {
-        __LCD_SetAddress(page, 0);
-        for (column = 0; column < 132; column++)
-        {
-            Dogs102x6_writeData(lcd_data, 1);
-        }
-    }
-}
-
-
-void __LCD_SetAddress(uchar page, uchar column)
-{
-    uchar cmd[1];
-
-    if (page > 7)
-    {
-        page = 7;
-    }
-
-    if (column > 101)
-    {
-        column = 101;
-    }
-
-    cmd[0] = PAGE_ADR + (7 - page);
-    uchar command_high = 0x00;
-    uchar command_low = 0x00;
-    uchar column_address[] = { COLUMN_ADR_MSB, COLUMN_ADR_LSB };
-
-    command_low = (column & 0x0F);
-    command_high = (column & 0xF0);
-    command_high = (command_high >> 4);
-
-    column_address[0] = COLUMN_ADR_LSB + command_low;
-    column_address[1] = COLUMN_ADR_MSB + command_high;
-
-    Dogs102x6_writeCommand(cmd, 1);
-    Dogs102x6_writeCommand(column_address, 2);
-}
-
-
-
-void Dogs102x6_writeData(uchar *sData, uchar i)
-{
-    // CS Low
-    P7OUT &= ~BIT4;
-    //CD High
-    P5OUT |= BIT6;
-
-    while (i)
-    {
-        // USCI_B1 TX buffer ready?
-        while (!(UCB1IFG & UCTXIFG));
-
-        // Transmit data and increment pointer
-        UCB1TXBUF = *sData++;
-
-        // Decrement the Byte counter
-        i--;
-    }
-
-    // Wait for all TX/RX to finish
-    while (UCB1STAT & UCBUSY);
-
-    // Dummy read to empty RX buffer and Clear any overrun conditions
-    UCB1RXBUF;
-
-    // CS High
-    P7OUT |= BIT4;
-}
-
-int DigitLength(int number) {
-    number = abs(number);
-    if (number >= 10000) return 5;
-    if (number >= 1000) return 4;
-    if (number >= 100) return 3;
-    if (number >= 10) return 2;
-    return 1;
-}
-
-
-void ShowNumber(int number)
-{
-    volatile int length = 1;
-    volatile int digit = 0;
-    volatile int j = 0;
-    volatile int i = 10;
-
-    length = DigitLength(number);
-
-    int temp = number;
-    for(j = 0; j < length; j++)
-    {
-        digit = (int)(temp % 10);
-
-        digit = digit < 0 ? (-1) * digit : digit;
-
-        if (digit < 10)
-            {
-            __LCD_SetAddress(0, column_offset + (length-j) * COLUMNS);
-            Dogs102x6_writeData(digits[digit][0], COLUMNS);
-        }
-
-        temp /= 10;
-    }
-
-    if (number >= 0)
-    {
-        __LCD_SetAddress(0, column_offset);
-        Dogs102x6_writeData(plus[0], COLUMNS);
-    }
-    else
-    {
-        __LCD_SetAddress(0, column_offset);
-        Dogs102x6_writeData(minus[0], COLUMNS);
-    }
-}
-
-int mg_convert(signed char data_axis)
-{
-    int mg_data = 0;
-    unsigned char i;
-    unsigned char mask = 0b01000000;
-    unsigned char twos_complement;
-
-    if(data_axis & BIT7) //NEGATIVE NUMBER
-    {
-        twos_complement = 256 - data_axis;
-        for(i = 0; i < 7; i++)
-        {
-            mg_data += (twos_complement & mask) != 0 ? bit_level_mg_values[i] : 0;
-            mask >>= 1;
-        }
-        mg_data *= -1;
-    }
-    else
-    {
-        for(i = 0; i < 7; i++)
-        {
-            mg_data += (data_axis & mask) != 0 ? bit_level_mg_values[i] : 0;
-            mask >>= 1;
-        }
-    }
-
-    return mg_data;
 }
 
