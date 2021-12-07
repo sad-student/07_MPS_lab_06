@@ -76,27 +76,38 @@ void SetupADC()
 //    ADC12CTL0 |= ADC12ENC;
 
     //
+
+    REFCTL0 &= ~REFMSTR;        // turn off REF block
 	// TODO: set reference voltage
 	ADC12MCTL0 = (ADC12MCTL0 & (~0x0ff)) | ((ADC12INCH_10 & (0x0f)) | (ADC12SREF_1 & (0x070)) | (0 & (0x070) | (ADC12EOS & (0x80))));
 
 	// TODO: set divider
 	// Set sampling mode (12-15, 9, 7-5, 4-3, 2-1)
 	ADC12CTL1 =
-			(ADC12CTL1 & (~0x0f17e)) | ((ADC12CSTARTADD_0 & (0x0f000)) | (ADC12SHP & (0x0100)) |
-					(ADC12DIV_0 & (0x0e0)) | (ADC12SSEL_3 & (0x018)) | (ADC12CONSEQ_0 & (0x05)));
+			(ADC12CTL1 & (~0x0fd7e)) | ((ADC12CSTARTADD_0 & (0x0f000)) | (ADC12SHS_0 & (0x0c00)) | (ADC12SHP & (0x0100)) |
+					(ADC12DIV_0 & (0x0e0)) | (ADC12SSEL_0 & (0x018)) | (ADC12CONSEQ_0 & (0x05)));
 	// Required for temperature sensor
 	ADC12CTL0 = (ADC12CTL0 & (~0x020)) | (ADC12REFON & (0x020));
+	// Enable ADC
+	ADC12CTL0 = (ADC12CTL0 & (~0x010)) | (ADC12ON & (0x010));
+	ADC12CTL2 = (ADC12CTL2 & (~0x01b0)) | ((~ADC12PDIV & (0x0100)) | (~ADC12TCOFF & (0x080)) | (ADC12RES_2 & (0x030)));
 
+//	// TODO: set divider
+//	// Set sampling mode (12-15, 9, 7-5, 4-3, 2-1)
+//	ADC12CTL1 =
+//			(ADC12CTL1 & (~0x0f17e)) | ((ADC12CSTARTADD_0 & (0x0f000)) | (ADC12SHP & (0x0100)) |
+//					(ADC12DIV_0 & (0x0e0)) | (ADC12SSEL_3 & (0x018)) | (ADC12CONSEQ_0 & (0x05)));
 	// Resolution and divider
-	ADC12CTL2 = (ADC12CTL2 & (~0x01b0)) | ((ADC12PDIV & (0x0100)) | (ADC12RES_2 & (0x030)));
+	//ADC12CTL2 = (ADC12CTL2 & (~0x01b0)) | ((ADC12PDIV & (0x0100)) | (ADC12RES_2 & (0x030)));
 	// Start sampling
-	ADC12CTL0 = (ADC12CTL0 & (~0x01)) | (ADC12SC & (0x01));
+	// ADC12CTL0 = (ADC12CTL0 & (~0x01)) | (ADC12SC & (0x01));
 
 	// Enable interrupts
 	ADC12IE = ADC12IE0;
 
-	// Enable ADC
-	ADC12CTL0 = (ADC12CTL0 & (~0x010)) | (ADC12ON & (0x010));
+    __delay_cycles(100);                        // delay to allow Ref to settle
+
+	ADC12CTL0 |= ADC12ENC;
 }
 
 #define CALADC12_15V_30C *((unsigned int *)0x1A1A) // Temperature Sensor Calibration-30 C
@@ -104,9 +115,10 @@ void SetupADC()
 
 #pragma vector = ADC12_VECTOR
 __interrupt void ADC12_ISR() {
-    TA0CTL &= ~MC__UP;
-    TA0CTL |= MC__STOP | TACLR;
-    TA0CCTL1 &= ~BIT2;
+//    TA0CTL &= ~MC__UP;
+//    TA0CTL |= MC__STOP | TACLR;
+//    TA0CCTL1 &= ~BIT2;
+	ADC12CTL0 = (ADC12CTL0 & (~0x01)) | (~ADC12SC & (0x01));
 
     // also clears ADC12IFG0 flag
     unsigned short int probe = ADC12MEM0 & 0x0FFF;
@@ -249,29 +261,26 @@ void printSymbol(int index, unsigned char page, unsigned int col){
 int main(void)
 {
     WDTCTL = WDTPW | WDTHOLD;
+    __bis_SR_register(GIE);
 
     uint8_t i;
 
     /* Initialize IO */
     P1DIR = 0xFF;
-    P2DIR = 0xFF;
-    P8DIR = 0xFF;
     P1OUT = 0;
-    P2OUT = 0;
-    P8OUT = 0;
 
-    UCSCTL3 = SELREF_2;                       // Set DCO FLL reference = REFO
-    UCSCTL4 |= SELA_2;                        // Set ACLK = REFO
-
-    __bis_SR_register(SCG0);                  // Disable the FLL control loop
-    UCSCTL0 = 0x0000;                         // Set lowest possible DCOx, MODx
-    UCSCTL1 = DCORSEL_7;
-    // Select DCO range 50MHz operation
-    UCSCTL2 = FLLD_1 + 762;                   // Set DCO Multiplier for 25MHz
-                                            // (N + 1) * FLLRef = Fdco
-                                            // (762 + 1) * 32768 = 25MHz
-                                            // Set FLL Div = fDCOCLK/2
-    __bic_SR_register(SCG0);                  // Enable the FLL control loop
+//    UCSCTL3 = SELREF_2;                       // Set DCO FLL reference = REFO
+//    UCSCTL4 |= SELA_2;                        // Set ACLK = REFO
+//
+//    __bis_SR_register(SCG0);                  // Disable the FLL control loop
+//    UCSCTL0 = 0x0000;                         // Set lowest possible DCOx, MODx
+//    UCSCTL1 = DCORSEL_7;
+//    // Select DCO range 50MHz operation
+//    UCSCTL2 = FLLD_1 + 762;                   // Set DCO Multiplier for 25MHz
+//                                            // (N + 1) * FLLRef = Fdco
+//                                            // (762 + 1) * 32768 = 25MHz
+//                                            // Set FLL Div = fDCOCLK/2
+//    __bic_SR_register(SCG0);                  // Enable the FLL control loop
 
     UCSCTL3 = (UCSCTL3 & (~0x070)) | SELREF__XT1CLK;
 	UCSCTL3 = (UCSCTL3 & (~0x07)) | FLLREFDIV__2;
@@ -395,12 +404,10 @@ int main(void)
 //    SetupTimer();
 //    ADC12CTL0 |= ADC12ENC;
     setUp(0x01);setUp(0x02);setUp(0x03);
-    __bis_SR_register(GIE);
 
     while (1)
     {
         P1OUT &= ~BIT1;
-        P8OUT &= ~BIT1;
         keypressed = (struct Element *) TI_CAPT_Buttons(&keypad);
 
         if (keypressed && keypressed == &PAD1)
