@@ -79,18 +79,19 @@ void SetupADC()
 
     REFCTL0 &= ~REFMSTR;        // turn off REF block
 	// TODO: set reference voltage
-	ADC12MCTL0 = (ADC12MCTL0 & (~0x0ff)) | ((ADC12INCH_10 & (0x0f)) | (ADC12SREF_1 & (0x070)) | (0 & (0x070) | (ADC12EOS & (0x80))));
+	// ADC12MCTL0 = (ADC12MCTL0 & (~0x0ff)) | ((ADC12INCH_10 & (0x0f)) | (ADC12SREF_1 & (0x070)) | (0 & (0x070) | (ADC12EOS & (0x80))));
+	ADC12MCTL0 = (ADC12MCTL0 & (~0x07f)) | ((ADC12SREF_1 & (0x070)) | (ADC12INCH_10 & (0x0f)));
 
 	// TODO: set divider
 	// Set sampling mode (12-15, 9, 7-5, 4-3, 2-1)
 	ADC12CTL1 =
-			(ADC12CTL1 & (~0x0fd7e)) | ((ADC12CSTARTADD_0 & (0x0f000)) | (ADC12SHS_0 & (0x0c00)) | (ADC12SHP & (0x0100)) |
-					(ADC12DIV_0 & (0x0e0)) | (ADC12SSEL_0 & (0x018)) | (ADC12CONSEQ_0 & (0x05)));
+			(ADC12CTL1 & (~0x0fefe)) | ((ADC12CSTARTADD_0 & (0x0f000)) | (ADC12SHS_0 & (0x0c00)) | (ADC12SHP & (0x0200)) |
+					(ADC12DIV_0 & (0x0e0)) | (ADC12SSEL_0 & (0x018)) | (ADC12CONSEQ_0 & (0x06)));
 	// Required for temperature sensor
-	ADC12CTL0 = (ADC12CTL0 & (~0x020)) | (ADC12REFON & (0x020));
+	ADC12CTL0 = (ADC12CTL0 & (~0x0f20)) | ((ADC12SHT0_8 & (0x0f00)) | (ADC12REFON & (0x020)));
 	// Enable ADC
 	ADC12CTL0 = (ADC12CTL0 & (~0x010)) | (ADC12ON & (0x010));
-	ADC12CTL2 = (ADC12CTL2 & (~0x01b0)) | ((~ADC12PDIV & (0x0100)) | (~ADC12TCOFF & (0x080)) | (ADC12RES_2 & (0x030)));
+	//ADC12CTL2 = (ADC12CTL2 & (~0x01b0)) | ((~ADC12PDIV & (0x0100)) | (~ADC12TCOFF & (0x080)) | (ADC12RES_2 & (0x030)));
 
 //	// TODO: set divider
 //	// Set sampling mode (12-15, 9, 7-5, 4-3, 2-1)
